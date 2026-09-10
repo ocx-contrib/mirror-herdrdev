@@ -107,15 +107,15 @@ platforms:
     runner: macos-14
     shell: bash
   #
-  # windows/amd64:
-  #   runner: windows-latest
-  #   shell: pwsh
-  #   # Upstream added the Windows asset in v0.8.2; v0.8.0 shipped four assets
-  #   # and no zip. This is the canonical fix for a late-added platform — a
-  #   # global `versions.min` bump would drop v0.8.0 from every OTHER platform
-  #   # too. An out-of-window (V,P) is never resolved, built, tested or pushed,
-  #   # and never reds the run.
-  #   min_version: "0.8.2"
+  windows/amd64:
+    runner: windows-latest
+    shell: pwsh
+    # Upstream added the Windows asset in v0.8.2; v0.8.0 shipped four assets
+    # and no zip. This is the canonical fix for a late-added platform — a
+    # global `versions.min` bump would drop v0.8.0 from every OTHER platform
+    # too. An out-of-window (V,P) is never resolved, built, tested or pushed,
+    # and never reds the run: the leg exists and self-skips for v0.8.0.
+    min_version: "0.8.2"
   #
   # windows/arm64 is NOT declared: upstream ships no ARM64 Windows build. The
   # single `herdr-windows-x86_64.zip` contains an x86-64 PE

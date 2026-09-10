@@ -106,8 +106,8 @@ assets:
     - "^herdr-macos-x86_64$"
   darwin/arm64:
     - "^herdr-macos-aarch64$"
-  # windows/amd64:
-  #   - "^herdr-windows-x86_64\\.zip$"
+  windows/amd64:
+    - "^herdr-windows-x86_64\\.zip$"
 
 asset_type:
   # Linux and macOS ship a RAW executable with no extension and no archive, so
@@ -116,25 +116,27 @@ asset_type:
   default:
     type: binary
     name: herdr
-  # platforms:
-  #   windows/amd64:
-  #     # Windows is the one archive. Verified on v0.8.2 and v0.9.0 — the zip
-  #     # has NO wrapper directory; its entries sit at the archive root:
-  #     #
-  #     #   $ unzip -l herdr-windows-x86_64.zip
-  #     #     conpty/arm64/OpenConsole.exe
-  #     #     conpty/conpty.dll
-  #     #     conpty/herdr-conpty.json
-  #     #     conpty/x64/OpenConsole.exe
-  #     #     herdr.exe                       ← already correctly named
-  #     #     THIRD-PARTY-NOTICES/…
-  #     #
-  #     # So `strip_components: 0` — stripping one component would DELETE
-  #     # `herdr.exe` and leave only the contents of `conpty/`. It also keeps
-  #     # `conpty/` a sibling of the executable, which is where herdr.exe
-  #     # looks for its ConPTY helper.
-  #     type: archive
-  #     strip_components: 0
+  platforms:
+    windows/amd64:
+      # Windows is the one archive. Verified on v0.8.2 and v0.9.0 — the zip
+      # has NO wrapper directory; its entries sit at the archive root:
+      #
+      #   $ unzip -l herdr-windows-x86_64.zip
+      #     conpty/arm64/OpenConsole.exe
+      #     conpty/conpty.dll
+      #     conpty/herdr-conpty.json
+      #     conpty/x64/OpenConsole.exe
+      #     herdr.exe                       ← already correctly named
+      #     THIRD-PARTY-NOTICES/…
+      #
+      # So `strip_components: 0` — stripping one component would DELETE
+      # `herdr.exe` and leave only the contents of `conpty/`. It also keeps
+      # `conpty/` a sibling of the executable, which is where herdr.exe
+      # looks for its ConPTY helper, and leaves PATH a bare ${installPath}
+      # exactly as the raw-binary platforms have it (hence one metadata.json
+      # and `bin_scan: off` for every platform).
+      type: archive
+      strip_components: 0
 
 # `off`, and it cannot be otherwise here. The scan only looks BELOW an
 # interface PATH entry of the form ${installPath}/<dir>. A raw-binary mirror
