@@ -1,0 +1,120 @@
+# Repo-wide policy for the herdr mirror.
+#
+# NOT a spec: it has no name/target/source and is never loaded on its own.
+# Everything a package owns — name, target, source, assets, asset_type,
+# bin_scan, metadata, catalog, tests, versions, announce, annotations — stays
+# in herdr/mirror.yml.
+#
+# ⚠️ `extends:` is a SHALLOW merge of top-level keys. A spec that sets a key
+# below replaces that block OUTRIGHT — there is no per-key merge. `platforms:`
+# is where this bites: it carries BOTH the runner matrix and the container
+# legs, so a child that restates it to tweak one runner silently drops every
+# `containers:` entry. Nothing reds — the legs simply stop existing, and every
+# os.features claim in that spec goes back to being merely asserted. This repo
+# is single-package, so `platforms:` lives HERE and herdr/mirror.yml does not
+# restate it — the trap is structurally eliminated rather than merely avoided.
+
+skip_prereleases: true
+cascade: true
+
+# Upstream publishes a rolling `preview-<date>-<sha>` prerelease between stable
+# tags (5 in the last month). `skip_prereleases` drops them by GitHub's own
+# `prerelease` flag, and the `tag_pattern` in herdr/mirror.yml cannot match
+# their shape either — two independent filters, deliberately.
+
+# New package, so the fleet rule applies unconditionally. A cascade tag
+# (`latest`, `0`, `0.9`) re-points on every re-publish; without a build segment
+# the new manifest reuses the bare version tag and orphans the prior digest for
+# registry GC, breaking any `@sha256:` pin in a consumer's ocx.lock. The `none`
+# exception applies only where upstream versions ALREADY carry semver build
+# metadata — herdr tags `vX.Y.Z` with no `+build` segment, so it does not.
+build_timestamp: date
+
+verify:
+  github_asset_digest: true
+
+concurrency:
+  # Assets are single ~20–25 MB static Rust binaries (and one ~9 MB zip on
+  # Windows), so fewer parallel downloads than a fleet default of small
+  # tarballs — the bundles are what dominate, not the request count.
+  max_downloads: 6
+  max_bundles: 3
+  max_pushes: 2
+  rate_limit_ms: 100
+  max_retries: 3
+  compression_threads: 0
+
+# ─── Platform matrix ────────────────────────────────────────────────────────
+#
+# `os.features` states what an artifact REQUIRES OF THE HOST — it is not a
+# label for how it was built. Measured per arch at BOTH ends of the declared
+# range (v0.8.0 floor and v0.9.0 head); the commands and their output sit above
+# `assets:` in herdr/mirror.yml. Both Linux binaries are FULLY STATIC —
+# `file` says "static-pie linked" (x86_64) / "statically linked" (aarch64),
+# `readelf -l | grep -c INTERP` is 0 and `readelf -d | grep -c NEEDED` is 0 —
+# so both keys are BARE, with no `+libc.*` suffix.
+#
+# Upstream ships no musl/gnu split to choose between: there is exactly one
+# Linux asset per arch. Tagging these `+libc.musl` would be a FALSE requirement
+# that hid the package from every glibc host it in fact runs on.
+#
+# A bare key claims universality, so it must prove it: ubuntu (glibc) + alpine
+# (musl) + fedora (a different glibc vintage) on BOTH arches. THE ALPINE LEG IS
+# THE PROOF — drop it and the claim is merely asserted.
+#
+# No `containers[].setup` anywhere: the smoke test drives the mirrored binary
+# and nothing else, and a static binary with an empty DT_NEEDED has nothing to
+# provision. Verified by a local `ocx package test` run against a real bundle.
+#
+# Staged rollout (skill Phase 10): darwin and windows are pre-written and
+# commented out below AND in herdr/mirror.yml's `assets:`, uncommented one pass
+# at a time once the Linux legs are end-to-end green. Both halves are commented
+# together on purpose — a declared-but-unmatched platform still boots a real
+# macOS/Windows runner and reports SUCCESS having tested nothing.
+platforms:
+  linux/amd64:
+    runner: ubuntu-latest
+    containers: &linux_containers
+      - { image: "ubuntu:24.04", shell: bash }
+      - { image: "alpine:3.20",  shell: sh }
+      - { image: "fedora:40",    shell: bash }
+  linux/arm64:
+    # arm64 container legs run natively — no qemu — so the runner arch must
+    # match the platform or the renderer reds the leg up front. The container
+    # set is the same three images, aliased rather than copied so the two
+    # arches can never drift apart.
+    runner: ubuntu-24.04-arm
+    containers: *linux_containers
+  # No `containers:` on darwin or windows — those runners have no Linux
+  # container engine, and the key is rejected at spec load.
+  #
+  # darwin/amd64:
+  #   # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 —
+  #   # GitHub's native macos-13 Intel pool is exhausted and deadlocks push.
+  #   runner: macos-14
+  #   prefix: ["arch", "-x86_64"]
+  # darwin/arm64:
+  #   runner: macos-14
+  #   shell: bash
+  #
+  # windows/amd64:
+  #   runner: windows-latest
+  #   shell: pwsh
+  #   # Upstream added the Windows asset in v0.8.2; v0.8.0 shipped four assets
+  #   # and no zip. This is the canonical fix for a late-added platform — a
+  #   # global `versions.min` bump would drop v0.8.0 from every OTHER platform
+  #   # too. An out-of-window (V,P) is never resolved, built, tested or pushed,
+  #   # and never reds the run.
+  #   min_version: "0.8.2"
+  #
+  # windows/arm64 is NOT declared: upstream ships no ARM64 Windows build. The
+  # single `herdr-windows-x86_64.zip` contains an x86-64 PE
+  # (`file herdr.exe` → "PE32+ executable … x86-64"); the `conpty/arm64/`
+  # directory inside it holds Microsoft's OpenConsole helper, not a herdr
+  # binary. Declaring the platform would match zero assets and be SILENTLY
+  # skipped — a green run with a platform that never existed.
+
+notify:
+  discord:
+    webhook_secret: OCX_MIRROR_DISCORD_HOOK
+    user_id: "227748867204972545"  # pinged in-message on failures

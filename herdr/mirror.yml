@@ -1,0 +1,194 @@
+extends: ../mirror-base.yml
+
+name: herdr
+
+# Logical index package `herdrdev/herdr` at the physical path
+# `ghcr.io/ocx-contrib/herdrdev/herdr` — slash segments, never hyphen-flattened.
+# The first segment must be this repo's own GitHub owner: GITHUB_TOKEN only
+# authorises packages owned by the repo the workflow runs in.
+#
+# Namespace choice: `herdrdev` is the project's OWN brand org (it holds the
+# repo, the site herdr.dev and @herdrdev), which is namespace rule 2 — the same
+# shape as `oven-sh/bun`, `astral-sh/uv` and `fish-shell/fish`. The
+# vendor-beats-org-handle rule does not apply: `herdr` on GitHub is an
+# unrelated personal User account, not the vendor
+# (`gh api users/herdr --jq .type` → "User"), so there is no vendor handle to
+# prefer. Nor is rule 4 (tool-as-namespace) in play — that covers a solo tool
+# under a MAINTAINER's personal handle, and `herdrdev` is an Organization.
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/herdrdev/herdr
+
+source:
+  type: github_release
+  owner: herdrdev
+  repo: herdr
+  # Stable releases are `vX.Y.Z`; the rolling preview channel tags
+  # `preview-<date>-<sha>`, which this pattern structurally cannot match.
+  # Observed 2026-09-10:
+  #
+  #   $ gh api "repos/herdrdev/herdr/releases?per_page=15" \
+  #       --jq '.[] | "\(.tag_name)\tprerelease=\(.prerelease)"'
+  #   v0.9.0                             prerelease=false
+  #   preview-2026-09-08-62431dbd033b    prerelease=true
+  #   preview-2026-09-06-9e9bc8a14466    prerelease=true
+  #   v0.8.2                             prerelease=false
+  #   …
+  #
+  # `skip_prereleases: true` (../mirror-base.yml) is the release POLICY and is
+  # not decorative here — it reads GitHub's own `prerelease` flag, which every
+  # preview above carries — but the pattern is the second, independent filter.
+  tag_pattern: "^v(?P<version>\\d+\\.\\d+\\.\\d+)$"
+
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# herdr is a Rust binary. Measured on the real v0.9.0 assets, BOTH arches:
+#
+#   $ file herdr-linux-x86_64
+#   ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked,
+#   BuildID[sha1]=2c0360b8…, not stripped
+#   $ file herdr-linux-aarch64
+#   ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked,
+#   BuildID[sha1]=e76ecd9b…, not stripped
+#
+#   $ readelf -l herdr-linux-x86_64 | grep -c INTERP   → 0
+#   $ readelf -d herdr-linux-x86_64 | grep -c NEEDED   → 0
+#   $ readelf -V herdr-linux-x86_64 | grep -o 'GLIBC_[0-9.]*' | sort -uV → (none)
+#
+# No PT_INTERP, no DT_NEEDED and not one GLIBC_* symbol version: the artifact
+# requires NOTHING of the host userland, so both Linux keys are BARE. The same
+# three commands on the v0.8.0 floor give the same answer ("static-pie linked"
+# / "statically linked", INTERP 0, NEEDED 0), so the property holds across the
+# whole declared range and not just at the head.
+#
+# Upstream ships exactly ONE Linux asset per arch — there is no `-musl` /
+# `-gnu` pair to split against — so a second, `+libc.glibc`-suffixed key would
+# have no artifact behind it. The alpine container leg in ../mirror-base.yml is
+# what turns the bare (universal) claim into evidence.
+#
+# ─── Asset scope (Phase 2, both directions) ────────────────────────────────
+#
+# Upstream publishes five assets per release and every one of them is claimed
+# below or deliberately out of range; there is nothing else to skip — no
+# checksums, no signatures, no source archives, no installers:
+#
+#   v0.9.0  herdr-linux-aarch64  herdr-linux-x86_64  herdr-macos-aarch64
+#           herdr-macos-x86_64   herdr-windows-x86_64.zip
+#   v0.8.2  identical five
+#   v0.8.0  the same four, NO windows zip  → windows/amd64 min_version 0.8.2
+#
+# Forward check (0 matches is a SILENT skip, not an error): each anchored regex
+# below was confirmed to match EXACTLY ONE asset at v0.8.0 (the floor), v0.8.2
+# and v0.9.0 (newest). Inverse check (completeness): upstream's full os/arch
+# coverage is linux{x86_64,aarch64} + macos{x86_64,aarch64} + windows{x86_64},
+# and all five are declared. `windows/arm64` is genuinely absent upstream —
+# `file herdr.exe` inside the zip reports "PE32+ executable … x86-64", and the
+# `conpty/arm64/OpenConsole.exe` inside it is Microsoft's console helper, not a
+# herdr build.
+#
+# macOS assets are per-arch Mach-O, NOT a universal binary — so each darwin key
+# gets its own pattern rather than one shared fat asset:
+#
+#   $ file herdr-macos-x86_64   → Mach-O 64-bit x86_64 executable
+#   $ file herdr-macos-aarch64  → Mach-O 64-bit arm64 executable
+#
+# Staged rollout (skill Phase 10): darwin and windows are commented out here
+# AND in ../mirror-base.yml's `platforms:`, uncommented together one pass at a
+# time. Uncomment by hand — NEVER `sed`, whose replacement side treats `\` as
+# special and has silently rewritten `\\.` to `\.` inside an asset regex on
+# this fleet before.
+assets:
+  linux/amd64:
+    - "^herdr-linux-x86_64$"
+  linux/arm64:
+    - "^herdr-linux-aarch64$"
+  # darwin/amd64:
+  #   - "^herdr-macos-x86_64$"
+  # darwin/arm64:
+  #   - "^herdr-macos-aarch64$"
+  # windows/amd64:
+  #   - "^herdr-windows-x86_64\\.zip$"
+
+asset_type:
+  # Linux and macOS ship a RAW executable with no extension and no archive, so
+  # the default names the file the bundle must contain. Without `name:` the
+  # bundle would carry `herdr-linux-x86_64` and nothing would resolve on PATH.
+  default:
+    type: binary
+    name: herdr
+  # platforms:
+  #   windows/amd64:
+  #     # Windows is the one archive. Verified on v0.8.2 and v0.9.0 — the zip
+  #     # has NO wrapper directory; its entries sit at the archive root:
+  #     #
+  #     #   $ unzip -l herdr-windows-x86_64.zip
+  #     #     conpty/arm64/OpenConsole.exe
+  #     #     conpty/conpty.dll
+  #     #     conpty/herdr-conpty.json
+  #     #     conpty/x64/OpenConsole.exe
+  #     #     herdr.exe                       ← already correctly named
+  #     #     THIRD-PARTY-NOTICES/…
+  #     #
+  #     # So `strip_components: 0` — stripping one component would DELETE
+  #     # `herdr.exe` and leave only the contents of `conpty/`. It also keeps
+  #     # `conpty/` a sibling of the executable, which is where herdr.exe
+  #     # looks for its ConPTY helper.
+  #     type: archive
+  #     strip_components: 0
+
+# `off`, and it cannot be otherwise here. The scan only looks BELOW an
+# interface PATH entry of the form ${installPath}/<dir>. A raw-binary mirror
+# has none — the executable IS the content root — and the Windows zip puts
+# `herdr.exe` at the archive root for the same reason, so PATH is a bare
+# ${installPath} on every platform. `auto` or `verify` is rejected at spec load
+# with exit 65 ("bin_scan is enabled but … declares no interface-visible
+# ${installPath}/<dir> PATH entry"). `off` plus a hand-listed `binaries` in
+# metadata.json is the blessed shape for `asset_type: binary`.
+bin_scan: off
+
+metadata:
+  # Resolves against THIS spec's directory, not the repo root. ONE file for
+  # every platform: the interface is identical — a single executable at the
+  # content root — because the raw-binary platforms have nothing else and the
+  # Windows zip is unpacked with strip_components 0 onto the same root.
+  default: metadata.json
+
+catalog:
+  # logo.svg / logo.png / CATALOG.md all sit beside this spec and are found by
+  # the default probe. They live HERE rather than at the repo root on purpose:
+  # a repo-root logo sits in no workflow's `paths:` filter, so replacing it
+  # would publish nothing until some unrelated edit happened to fire.
+  logo: logo.svg
+
+versions:
+  # v0.8.0 is the oldest release whose asset naming matches the patterns above
+  # unchanged, and it is deep enough to exercise the windows `min_version`
+  # window without a second asset pattern. Three stable releases are in range:
+  # v0.8.0, v0.8.2, v0.9.0.
+  min: "0.8.0"
+  new_per_run: 5
+  # Hash-staggered, NOT hand-picked:
+  #   $ python3 .claude/skills/create-mirror/scripts/poll_stagger.py herdrdev/herdr
+  #   slot: 80  (minute=20, hour-offset=1)
+  #   cron: 20 1-23/6 * * *
+  # Fleet-synchronized crons burst-pushed to GHCR together and tripped its
+  # secondary rate limit on 2026-08-04.
+  poll_interval: "20 1-23/6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT — unlike `metadata.default` and
+  # `catalog.logo` above, which resolve against this spec's own directory.
+  - name: smoke
+    script: herdr/tests/smoke.star
+
+annotations:
+  # From the Phase 1.5 license gate:
+  #   $ gh api repos/herdrdev/herdr/license --jq '.license.spdx_id'
+  #   Apache-2.0
+  org.opencontainers.image.licenses: "Apache-2.0"
+
+announce:
+  # Spelled out, not derived from target.repository — the logical name and the
+  # physical path are related by convention only.
+  package: herdrdev/herdr
+  fork: ocx-contrib/index
