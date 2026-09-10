@@ -64,15 +64,22 @@ expect.matches(r_version.stdout, r"\d+\.\d+\.\d+")
 
 # ─── Tier 3a: client boot + socket resolution ───────────────────────────────
 #
-# `status` constructs the client, reports the protocol generation it was built
-# with and stats its server socket. Every asserted token is one herdr computed:
-# the version, the wire protocol number and the endpoint generation. No server
-# is started and none is required — the command is a probe.
+# `status` constructs the client, reports the wire protocol it was built with
+# and stats its server socket. Both asserted tokens are ones herdr computed —
+# the version it reports here is produced by a different path than `--version`,
+# and `protocol` is the socket API generation. No server is started and none is
+# required: the command is a probe.
+#
+# Only fields present across the WHOLE declared version range may be asserted.
+# `endpoint_protocol_generation:` is not, and asserting it cost a full red
+# matrix: it appears in 0.9.0's output and in neither 0.8.0's nor 0.8.2's, and
+# one failing version fails the whole test job, leaving EVERY version
+# unpublished. `protocol:` itself moves (19 → 20 → 22 over this range), hence
+# `\d+` rather than a value.
 r_status = ocx.run(HERDR, "status", env = cfg("valid.toml"))
 expect.ok(r_status)
 expect.matches(r_status.stdout, r"version: \d+\.\d+\.\d+")
 expect.matches(r_status.stdout, r"protocol: \d+")
-expect.matches(r_status.stdout, r"endpoint_protocol_generation: \d+")
 
 # ─── Tier 3b: the embedded API schema, written to disk ──────────────────────
 #
