@@ -88,14 +88,24 @@ platforms:
   # No `containers:` on darwin or windows — those runners have no Linux
   # container engine, and the key is rejected at spec load.
   #
-  # darwin/amd64:
-  #   # Intel slice tested on the arm64 macos-14 runner via Rosetta 2 —
-  #   # GitHub's native macos-13 Intel pool is exhausted and deadlocks push.
-  #   runner: macos-14
-  #   prefix: ["arch", "-x86_64"]
-  # darwin/arm64:
-  #   runner: macos-14
-  #   shell: bash
+  darwin/amd64:
+    # Upstream's macOS assets are per-arch THIN Mach-O binaries, not a universal
+    # one (`file herdr-macos-x86_64` → "Mach-O 64-bit x86_64 executable"), so
+    # this leg runs an x86-64 binary on an arm64 runner — transparently, under
+    # Rosetta 2. Never native `macos-13`: GitHub's Intel pool is exhausted, a
+    # queued leg never schedules, and `push` (needs: test) then deadlocks the
+    # whole mirror.
+    #
+    # No `prefix: ["arch", "-x86_64"]`. It is the renderer's DEFAULT for this
+    # exact key, and it is applied only to `kind: command` tests — the
+    # `${{ matrix.shell }} -c` form. This spec's only test is `kind: script`
+    # (Starlark), which `ocx package test --platform darwin/amd64` invokes
+    # directly, so the field would render nothing. Verified by grepping the
+    # generated workflow: no `arch -x86_64` anywhere in it.
+    runner: macos-14
+  darwin/arm64:
+    runner: macos-14
+    shell: bash
   #
   # windows/amd64:
   #   runner: windows-latest

@@ -102,10 +102,10 @@ assets:
     - "^herdr-linux-x86_64$"
   linux/arm64:
     - "^herdr-linux-aarch64$"
-  # darwin/amd64:
-  #   - "^herdr-macos-x86_64$"
-  # darwin/arm64:
-  #   - "^herdr-macos-aarch64$"
+  darwin/amd64:
+    - "^herdr-macos-x86_64$"
+  darwin/arm64:
+    - "^herdr-macos-aarch64$"
   # windows/amd64:
   #   - "^herdr-windows-x86_64\\.zip$"
 
