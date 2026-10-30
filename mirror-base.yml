@@ -102,9 +102,9 @@ platforms:
     # (Starlark), which `ocx package test --platform darwin/amd64` invokes
     # directly, so the field would render nothing. Verified by grepping the
     # generated workflow: no `arch -x86_64` anywhere in it.
-    runner: macos-14
+    runner: macos-15
   darwin/arm64:
-    runner: macos-14
+    runner: macos-15
     shell: bash
   #
   windows/amd64:
