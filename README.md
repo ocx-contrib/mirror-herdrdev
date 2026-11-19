@@ -1,13 +1,16 @@
 # mirror-herdrdev
 
 OCX mirror for [herdr](https://github.com/herdrdev/herdr), a terminal workspace
-manager for AI coding agents, and its [desktop app](https://github.com/herdrdev/herdr-app).
+manager for AI coding agents, its [desktop app](https://github.com/herdrdev/herdr-app)
+and [herdr-core](https://github.com/herdrdev/herdr-core), the terminal core behind
+them.
 One repository, one spec directory per package.
 
 | Package | Spec | Publishes to | Announced as | Upstream SPDX |
 |---|---|---|---|---|
 | [herdr](https://github.com/herdrdev/herdr) | [`herdr/mirror.yml`](herdr/mirror.yml) | `ghcr.io/ocx-contrib/herdrdev/herdr` | [`ocx.sh/herdrdev/herdr`](https://index.ocx.sh/herdrdev/herdr) | `Apache-2.0` |
 | [herdr-app](https://github.com/herdrdev/herdr-app) | [`herdr-app/mirror.yml`](herdr-app/mirror.yml) | `ghcr.io/ocx-contrib/herdrdev/herdr-app` | `ocx.sh/herdrdev/herdr-app` (announced once published) | `Apache-2.0` |
+| [herdr-core](https://github.com/herdrdev/herdr-core) | [`herdr-core/mirror.yml`](herdr-core/mirror.yml) | `ghcr.io/ocx-contrib/herdrdev/herdr-core` | `ocx.sh/herdrdev/herdr-core` (announced once published) | `Apache-2.0` |
 
 Each upstream release is discovered, re-bundled, smoke-tested per
 `(version, platform)` and only then pushed with cascade tags, after which the
@@ -29,6 +32,7 @@ herdr/
 ├── logo.svg / logo.png describe assets, 512px PNG
 └── tests/smoke.star    Starlark smoke test
 herdr-app/              same shape, plus scripts/generate.py (url_index source)
+herdr-core/             same shape as herdr-app
 ```
 
 `LICENSE` and `NOTICE.md` are shared at the root. The logo is **not** — it sits
@@ -84,6 +88,25 @@ darwin/arm64 and windows/amd64 are written but commented out in the spec, to be
 enabled one pass at a time after Linux is green. `darwin/amd64` is not declared:
 upstream stopped shipping a macOS x86_64 build after 0.1.5.
 
+### `herdr-core`
+
+Same source shape as `herdr-app`: no GitHub Releases, only git tags, with a
+per-version `core/<version>/manifest.json` on `releases.herdr.dev`;
+`herdr-core/scripts/generate.py` is the `herdr-app` generator pointed at the
+core's repo and URL prefix. Five assets per version from `0.1.10` (the first
+tag), all declared. The Linux binaries are fully static (checked at `0.1.10` and
+`0.1.21`, both arches), so the keys are bare and the matrix is ubuntu + alpine +
+fedora.
+
+`herdr-core/mirror.yml` **restates `platforms:` in full** rather than inheriting
+the base: the base pins `windows/amd64` to `min_version: "0.8.2"` for the
+`herdr` package, which would exclude every `0.1.x` herdr-core version from
+Windows. The executable is `herdr-core` — upstream's installer adds an `hc`
+link, this package does not. Its smoke test drives `exec` and `file
+write|read|edit` through a private core (`HC_SESSION`, scratch state, and on
+Unix a short `HC_SOCKET` because scratch paths overflow the 107-byte socket
+limit) and stops that core before asserting.
+
 ## Editing
 
 Change the **spec**, never the generated workflow YAML. `verify-generated.yml`
@@ -93,8 +116,9 @@ fails CI with exit 65 on any hand-edit.
 direnv allow                                    # once, to activate the toolchain
 ocx-mirror package validate herdr/mirror.yml
 ocx-mirror package validate herdr-app/mirror.yml
-ocx-mirror package pipeline generate ci --spec herdr/mirror.yml --spec herdr-app/mirror.yml
-ocx-mirror package pipeline generate ci --check --spec herdr/mirror.yml --spec herdr-app/mirror.yml
+ocx-mirror package validate herdr-core/mirror.yml
+ocx-mirror package pipeline generate ci --spec herdr/mirror.yml --spec herdr-app/mirror.yml --spec herdr-core/mirror.yml
+ocx-mirror package pipeline generate ci --check --spec herdr/mirror.yml --spec herdr-app/mirror.yml --spec herdr-core/mirror.yml
 ```
 
 `--spec` **appends** rather than replaces, so a command naming a subset
