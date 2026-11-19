@@ -77,19 +77,15 @@ verify:
 # → 404), so the floor `versions.min: 0.1.6` sits exactly where the set
 # stabilises and the key would match zero assets. `windows/arm64` likewise has
 # no asset. Declaring either would be silently skipped.
-#
-# Staged rollout (skill Phase 10): darwin/arm64 and windows/amd64 are commented
-# out here AND in `platforms:` below, uncommented together one pass at a time.
-# Uncomment by hand — NEVER `sed` (it rewrites `\\.` to `\.` in a regex).
 assets:
   linux/amd64+libc.glibc:
     - "^herdr-app-linux-x86_64\\.tar\\.gz$"
   linux/arm64+libc.glibc:
     - "^herdr-app-linux-aarch64\\.tar\\.gz$"
-  # darwin/arm64:
-  #   - "^herdr-app-macos-aarch64\\.tar\\.gz$"
-  # windows/amd64:
-  #   - "^herdr-app-windows-x86_64\\.tar\\.gz$"
+  darwin/arm64:
+    - "^herdr-app-macos-aarch64\\.tar\\.gz$"
+  windows/amd64:
+    - "^herdr-app-windows-x86_64\\.tar\\.gz$"
 
 # ⚠️ RESTATED IN FULL, not inherited. `extends:` is a SHALLOW merge and
 # ../mirror-base.yml's `platforms:` is written for the static `herdr` package
@@ -122,12 +118,11 @@ platforms:
     containers: *linux_containers
   # No `containers:` on darwin or windows — those runners have no Linux
   # container engine, and the key is rejected at spec load.
-  #
-  # darwin/arm64:
-  #   runner: macos-15
-  # windows/amd64:
-  #   runner: windows-latest
-  #   shell: pwsh
+  darwin/arm64:
+    runner: macos-15
+  windows/amd64:
+    runner: windows-latest
+    shell: pwsh
 
 asset_type:
   # Every platform ships a tar.gz with a wrapper directory that is part of the
@@ -155,8 +150,8 @@ bin_scan: verify
 metadata:
   # Resolves against THIS spec's directory.
   default: metadata.json
-  # platforms:
-  #   darwin/arm64: metadata-darwin.json
+  platforms:
+    darwin/arm64: metadata-darwin.json
 
 catalog:
   # logo.svg / logo.png / CATALOG.md sit beside this spec and are found by the
