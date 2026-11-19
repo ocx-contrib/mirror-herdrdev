@@ -5,6 +5,10 @@
 task = "ocx.sh/go-task/task:3.53.1"
 cli = "ocx.sh/ocx/cli:0.6"
 mirror = "ocx.sh/ocx/mirror:0.6"
+# herdr-app is a `url_index` source whose generator is a Python script, so the
+# generator runtime is part of the toolchain (namespaced coordinate; flat
+# `ocx.sh/uv:0` is forbidden).
+uv = "ocx.sh/astral-sh/uv:0"
 
 [group.lint.tools]
 uv = "ocx.sh/astral-sh/uv:0.13.0"

@@ -1,0 +1,14 @@
+{
+  "type": "bundle",
+  "version": 1,
+  "binaries": ["herdr-app"],
+  "env": [
+    {
+      "key": "PATH",
+      "type": "path",
+      "required": true,
+      "value": "${installPath}/herdr-app",
+      "visibility": "public"
+    }
+  ]
+}

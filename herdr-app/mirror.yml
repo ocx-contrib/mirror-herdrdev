@@ -1,0 +1,191 @@
+extends: ../mirror-base.yml
+
+name: herdr-app
+
+# Logical index package `herdrdev/herdr-app` at the physical path
+# `ghcr.io/ocx-contrib/herdrdev/herdr-app` — slash segments, never
+# hyphen-flattened. Same namespace as the sibling `herdr` package (see
+# herdr/mirror.yml): `herdrdev` is the project's own brand org and holds this
+# repo too (`gh api repos/herdrdev/herdr-app` → Apache-2.0, "herdr desktop app").
+target:
+  registry: ghcr.io
+  repository: ocx-contrib/herdrdev/herdr-app
+
+# ─── Source: url_index, NOT github_release ──────────────────────────────────
+#
+# This upstream publishes NO GitHub Releases — only git tags (v0.1.4 …):
+#
+#   $ gh api repos/herdrdev/herdr-app/releases --jq length     → 0
+#   $ gh api repos/herdrdev/herdr-app/tags --jq '.[].name'     → v0.1.16 … v0.1.4
+#
+# The binaries live on releases.herdr.dev. There is no global version index
+# (app/, index.json, versions.json, releases.json … all 404; app/latest.json
+# names only the newest), but every version has an immutable
+# `app/<version>/manifest.json` — upstream's release workflow writes it as part
+# of the release contract — carrying each target's `url` + `sha256`. The
+# generator lists the git tags, fetches that manifest per tag, and copies url +
+# digest out of it; it never builds a URL by pattern. A tag whose manifest 404s
+# (tag pushed before the upload finished) is skipped; any other error fails.
+# `command` resolves against THIS spec's directory.
+source:
+  type: url_index
+  generator:
+    command: ["uv", "run", "scripts/generate.py"]
+    # Measured ~5 s warm: one tags page + one manifest fetch per tag.
+    timeout_seconds: 240
+
+# ⚠️ `verify` REPLACES the base's block outright (shallow `extends:` merge). The
+# base sets `github_asset_digest: true`, which is meaningless for a url_index
+# source. The manifest declares a sha256 for every target, so require it: an
+# asset that loses its digest (a generator typo turning the object form back into
+# a bare string) fails instead of being mirrored unverified.
+verify:
+  url_index_digest: require
+
+# ─── libc gate (Phase 3.5) — the evidence, not the conclusion ───────────────
+#
+# herdr-app is a GUI binary, NOT static like the sibling `herdr`. Measured on
+# the real linux-x86_64 asset at BOTH ends of the declared range (0.1.6 floor,
+# 0.1.16 head):
+#
+#   $ readelf -V herdr-app | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+#   GLIBC_2.35                                  (0.1.6 and 0.1.16, identical)
+#   $ readelf -d herdr-app | grep NEEDED        (0.1.16)
+#   libxcb.so.1  libxkbcommon.so.0  libgcc_s.so.1  libm.so.6  libc.so.6
+#   ld-linux-x86-64.so.2
+#   (0.1.6 additionally NEEDs libxkbcommon-x11.so.0)
+#
+# A dynamic glibc interpreter, so both Linux keys carry `+libc.glibc`. The
+# aarch64 asset was measured at 0.1.16 only: `/lib/ld-linux-aarch64.so.1`, max
+# symbol version GLIBC_2.35, additionally NEEDs libfontconfig.so.1.
+# GLIBC_2.35 rules out images older than Ubuntu 22.04, hence ubuntu:24.04 +
+# fedora:40 and NO alpine leg (musl cannot load it).
+#
+# Upstream ships exactly one Linux asset per arch (no musl/gnu pair), so the
+# key is a requirement of the host, not a label for how it was built.
+#
+# ─── Asset scope (Phase 2, both directions) ────────────────────────────────
+#
+# The manifest of every version in range (0.1.6 … 0.1.16) names exactly four
+# targets: linux-x86_64, linux-aarch64, macos-aarch64, windows-x86_64 — each a
+# `herdr-app-<target>.tar.gz`. Each anchored regex below matches EXACTLY ONE
+# asset at every one of those versions (generator output checked 0.1.6–0.1.16).
+# Windows is a tar.gz too, not a zip.
+#
+# `darwin/amd64` is NOT declared: 0.1.4 and 0.1.5 shipped a `macos-x86_64`
+# asset, but 0.1.6 and later do not (`app/0.1.16/herdr-app-macos-x86_64.tar.gz`
+# → 404), so the floor `versions.min: 0.1.6` sits exactly where the set
+# stabilises and the key would match zero assets. `windows/arm64` likewise has
+# no asset. Declaring either would be silently skipped.
+#
+# Staged rollout (skill Phase 10): darwin/arm64 and windows/amd64 are commented
+# out here AND in `platforms:` below, uncommented together one pass at a time.
+# Uncomment by hand — NEVER `sed` (it rewrites `\\.` to `\.` in a regex).
+assets:
+  linux/amd64+libc.glibc:
+    - "^herdr-app-linux-x86_64\\.tar\\.gz$"
+  linux/arm64+libc.glibc:
+    - "^herdr-app-linux-aarch64\\.tar\\.gz$"
+  # darwin/arm64:
+  #   - "^herdr-app-macos-aarch64\\.tar\\.gz$"
+  # windows/amd64:
+  #   - "^herdr-app-windows-x86_64\\.tar\\.gz$"
+
+# ⚠️ RESTATED IN FULL, not inherited. `extends:` is a SHALLOW merge and
+# ../mirror-base.yml's `platforms:` is written for the static `herdr` package
+# (bare keys + an alpine leg), which would not match the `+libc.glibc` keys
+# here. Both Linux keys therefore get their own runners AND container legs,
+# restated rather than merged.
+#
+# `containers[].setup` provisions the stock images with the X11 client libraries
+# the binary links (one command per entry, no shell metacharacter tricks): the
+# leg then honestly claims "runs on stock image X plus these named packages".
+# `os.features` cannot declare a runtime dependency beyond libc, so a consumer
+# must have the same libraries installed (stated in CATALOG.md).
+platforms:
+  linux/amd64+libc.glibc:
+    runner: ubuntu-latest
+    containers: &linux_containers
+      - image: "ubuntu:24.04"
+        shell: bash
+        setup:
+          - apt-get update
+          - apt-get install -y libxcb1 libxkbcommon0 libxkbcommon-x11-0 libfontconfig1
+      - image: "fedora:40"
+        shell: bash
+        setup:
+          - dnf install -y libxcb libxkbcommon libxkbcommon-x11 fontconfig
+  linux/arm64+libc.glibc:
+    # arm64 container legs run natively — no qemu — so the runner arch must
+    # match the platform. Same two images, aliased so the arches cannot drift.
+    runner: ubuntu-24.04-arm
+    containers: *linux_containers
+  # No `containers:` on darwin or windows — those runners have no Linux
+  # container engine, and the key is rejected at spec load.
+  #
+  # darwin/arm64:
+  #   runner: macos-15
+  # windows/amd64:
+  #   runner: windows-latest
+  #   shell: pwsh
+
+asset_type:
+  # Every platform ships a tar.gz with a wrapper directory that is part of the
+  # layout the metadata points into, so nothing is stripped:
+  #
+  #   linux/windows: herdr-app/{herdr-app[.exe], LICENSE, THIRD-PARTY-NOTICES,
+  #                  herdr-app.svg}      (0.1.6 floor: just the exe + svg)
+  #   macos-aarch64: Herdr.app/Contents/{MacOS/Herdr, Info.plist, Resources,
+  #                  _CodeSignature}
+  #
+  # `strip_components: 0` keeps `herdr-app/` (PATH = ${installPath}/herdr-app)
+  # and `Herdr.app/` intact; stripping one would put the exe at the root where
+  # no `${installPath}/<dir>` PATH entry can reach it.
+  type: archive
+  strip_components: 0
+
+# `verify`, not `auto`: the binary set is platform-ASYMMETRIC — `herdr-app` on
+# Linux/Windows but `Herdr` on macOS — so `binaries` is hand-listed per metadata
+# file and the scan checks that claim against the extracted tree (an executable
+# on the PATH dir that the file does not list, or a listed one that is not
+# executable, fails the run). The Linux dir holds one 0755 file plus plain
+# data files. Windows reuses the default file (its `.exe` suffix is stripped).
+bin_scan: verify
+
+metadata:
+  # Resolves against THIS spec's directory.
+  default: metadata.json
+  # platforms:
+  #   darwin/arm64: metadata-darwin.json
+
+catalog:
+  # logo.svg / logo.png / CATALOG.md sit beside this spec and are found by the
+  # default probe. Upstream's own icon, identical to the `herdr-app.svg` inside
+  # the archive and `assets/icons/herdr-ui-icon-clean.svg` in the repo.
+  logo: logo.svg
+
+versions:
+  # 0.1.6 is the first version with the stable four-target set (see Asset
+  # scope), which also makes the floor deep enough to exercise the
+  # libxkbcommon-x11 difference (NEEDED at 0.1.6, not at 0.1.16).
+  min: "0.1.6"
+  new_per_run: 5
+  # Hash-staggered, NOT hand-picked:
+  #   $ python3 .claude/skills/create-mirror/scripts/poll_stagger.py herdrdev/herdr-app
+  #   slot: 132  (minute=12, hour-offset=2)
+  #   cron: 12 2-23/6 * * *
+  poll_interval: "12 2-23/6 * * *"
+
+tests:
+  # `script:` resolves from the REPOSITORY ROOT.
+  - name: smoke
+    script: herdr-app/tests/smoke.star
+
+annotations:
+  # $ gh api repos/herdrdev/herdr-app/license --jq '.license.spdx_id'
+  #   Apache-2.0
+  org.opencontainers.image.licenses: "Apache-2.0"
+
+announce:
+  package: herdrdev/herdr-app
+  fork: ocx-contrib/index

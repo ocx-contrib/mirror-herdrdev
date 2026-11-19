@@ -1,11 +1,13 @@
 # mirror-herdrdev
 
 OCX mirror for [herdr](https://github.com/herdrdev/herdr), a terminal workspace
-manager for AI coding agents. One repository, one spec directory per package.
+manager for AI coding agents, and its [desktop app](https://github.com/herdrdev/herdr-app).
+One repository, one spec directory per package.
 
 | Package | Spec | Publishes to | Announced as | Upstream SPDX |
 |---|---|---|---|---|
 | [herdr](https://github.com/herdrdev/herdr) | [`herdr/mirror.yml`](herdr/mirror.yml) | `ghcr.io/ocx-contrib/herdrdev/herdr` | [`ocx.sh/herdrdev/herdr`](https://index.ocx.sh/herdrdev/herdr) | `Apache-2.0` |
+| [herdr-app](https://github.com/herdrdev/herdr-app) | [`herdr-app/mirror.yml`](herdr-app/mirror.yml) | `ghcr.io/ocx-contrib/herdrdev/herdr-app` | `ocx.sh/herdrdev/herdr-app` (announced once published) | `Apache-2.0` |
 
 Each upstream release is discovered, re-bundled, smoke-tested per
 `(version, platform)` and only then pushed with cascade tags, after which the
@@ -26,6 +28,7 @@ herdr/
 ├── CATALOG.md          → ocx package describe
 ├── logo.svg / logo.png describe assets, 512px PNG
 └── tests/smoke.star    Starlark smoke test
+herdr-app/              same shape, plus scripts/generate.py (url_index source)
 ```
 
 `LICENSE` and `NOTICE.md` are shared at the root. The logo is **not** — it sits
@@ -38,6 +41,11 @@ happened to fire.
 nothing reds — the legs simply stop existing, and every `os.features` claim
 goes back to being asserted rather than verified. `herdr/mirror.yml` does not
 restate `platforms:` at all; the measured matrix lives in `mirror-base.yml`.
+`herdr-app/mirror.yml` **does** restate it — in full, and says so — because the
+base matrix is written for the static `herdr` binary (bare keys + alpine) and
+`herdr-app` is a dynamically linked glibc GUI binary. It restates `verify:` for
+the same reason (`url_index_digest: require` instead of the base's
+`github_asset_digest`).
 
 ## Platforms
 
@@ -60,6 +68,22 @@ The Windows zip has no wrapper directory: `herdr.exe`, `conpty/` and
 herdr looks for it. That platform carries `min_version: "0.8.2"` — v0.8.0
 shipped no Windows asset.
 
+### `herdr-app`
+
+Upstream publishes **no GitHub Releases** for `herdr-app`, only git tags. Its
+binaries live on `releases.herdr.dev`, and every version carries an immutable
+`app/<version>/manifest.json` naming each target's URL and sha256.
+`herdr-app/scripts/generate.py` lists the git tags, reads each manifest and emits
+a `url_index` document; every digest is verified (`url_index_digest: require`).
+
+The Linux binaries are dynamically linked against glibc 2.35 and the X11 client
+libraries, so the keys are `linux/{amd64,arm64}+libc.glibc`, tested on ubuntu and
+fedora only (no alpine), each leg provisioned through `containers[].setup`.
+`versions.min` is `0.1.6`, the first version with the stable four-target set.
+darwin/arm64 and windows/amd64 are written but commented out in the spec, to be
+enabled one pass at a time after Linux is green. `darwin/amd64` is not declared:
+upstream stopped shipping a macOS x86_64 build after 0.1.5.
+
 ## Editing
 
 Change the **spec**, never the generated workflow YAML. `verify-generated.yml`
@@ -68,8 +92,9 @@ fails CI with exit 65 on any hand-edit.
 ```bash
 direnv allow                                    # once, to activate the toolchain
 ocx-mirror package validate herdr/mirror.yml
-ocx-mirror package pipeline generate ci --spec herdr/mirror.yml
-ocx-mirror package pipeline generate ci --check --spec herdr/mirror.yml
+ocx-mirror package validate herdr-app/mirror.yml
+ocx-mirror package pipeline generate ci --spec herdr/mirror.yml --spec herdr-app/mirror.yml
+ocx-mirror package pipeline generate ci --check --spec herdr/mirror.yml --spec herdr-app/mirror.yml
 ```
 
 `--spec` **appends** rather than replaces, so a command naming a subset
